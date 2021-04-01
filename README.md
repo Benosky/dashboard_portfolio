@@ -3,11 +3,8 @@
 
 ### Find below the url/links to the deployed apps of the projects files that you have seen above:
 
-[I'm an inline-style link](https://www.google.com)
+Investment Calculator Dashboard: (https://ben-umeh-investment-calculator.herokuapp.com/)
 
-[I'm an inline-style link with title](https://www.google.com "Google's Homepage")
+Stock Movement Dashboard: (https://share.streamlit.io/benosky/dashboard_portfolio/myapp.py)
 
-[I'm a reference-style link][Arbitrary case-insensitive reference text]
-
-[I'm a relative reference to a repository file](../blob/master/LICENSE)
-
+Client Geographical Dispersion/Concentration Dashboard: (https://share.streamlit.io/benosky/dashboard_portfolio/our_clients_map.py)
