@@ -24,11 +24,21 @@ from pyspark.sql.functions import current_date
 
 import datetime
 
+
+import streamlit as st
+import plotly.express as px
+from pandas_datareader import data as pdr
+import yfinance as yf
+yf.pdr_override()
+import sys
+import pycountry_convert as pc
+import pydeck as pdk
+
 st.title('Branches Sales Forecasts Dashboard')
 
 @st.cache
 def load_data():
-    sales_df = pd.read_csv('sales_data.csv')
+    sales_df = pd.read_csv('sales_data1.csv')
     return sales_df
 # train2 = spark.createDataFrame(stock_df2)
 # train2.createOrReplaceTempView('train2')
@@ -36,17 +46,17 @@ def load_data():
 df = load_data()
 
 branch = st.sidebar.selectbox(
-    "Select Branch", list(df.facilities.unique()), ['3A HEALTH']
+    "Select Branch", tuple(df['branch_name'].unique())
 )
 
 # Select the chosen branch sales data
-data = df[df['facilities']== branch]
+data = df[df['branch_name']== branch]
 
 product = st.sidebar.selectbox(
-    "Select Product", list(data.drug_name.unique()), ['ATENOLOL 50MG x28']
+    "Select Product", tuple(data['product_name'].unique())
 )
 
-prod_data = data[data['drug_name']== product]
+prod_data = data[data['product_name']== product]
 
 # def facility_names():
 #   facilty_name_list_1 = sorted(list(stock_df.facilities.unique()))
@@ -68,13 +78,12 @@ prod_data = data[data['drug_name']== product]
 #   facility_drug_names_list = sorted(list(facility_drug_df.drug_name.unique()))
 #   return facility_drug_name_list
 
-@st.cache
 def train_data():
     # structure of the training data set
     train_schema = StructType([
     StructField('sale_week', DateType()),
-    StructField('facilities', StringType()),
-    StructField('drug_name', StringType()),
+    StructField('branch_name', StringType()),
+    StructField('product_name', StringType()),
     StructField('total_units_sold', IntegerType())
     ])
 
@@ -93,23 +102,23 @@ def train_data():
     sc = SparkContext.getOrCreate()
     sql_statement = '''
     SELECT
-      facilities,
-      drug_name,
+      branch_name,
+      product_name,
       CAST(sale_week as date) as ds,
       SUM(total_units_sold) as y
     FROM train
-    GROUP BY facilities, drug_name, ds
-    ORDER BY facilities, drug_name, ds
+    GROUP BY branch_name, product_name, ds
+    ORDER BY branch_name, product_name, ds
     '''
     branch_product_history = (
     spark
       .sql(sql_statement)
-      .repartition(sc.defaultParallelism, ['facilities', 'drug_name'])
+      .repartition(sc.defaultParallelism, ['branch_name', 'product_name'])
     ).cache()
 
     #Convert the ds column to datetimevm
     branch_product_history = branch_product_history.select(
-      'facilities', 'drug_name',
+      'branch_name', 'product_name',
       from_unixtime(unix_timestamp('ds', 'yyyy-MM-dd')).alias('ds'), 'y'
       )
     return branch_product_history
@@ -118,13 +127,15 @@ def train_data():
 trnData = train_data()
 
 
-@st.cache
+mdl = None
+mdl_fit = None
+
 def generate_forecast():
     # structure of the forecast result data set
     result_schema =StructType([
     StructField('ds',DateType()),
-    StructField('facilities',StringType()),
-    StructField('drug_name',StringType()),
+    StructField('branch_name',StringType()),
+    StructField('product_name',StringType()),
     StructField('y',FloatType()),
     StructField('yhat',FloatType()),
     StructField('yhat_upper',FloatType()),
@@ -149,6 +160,7 @@ def generate_forecast():
         # --------------------------------------
         # TRAIN MODEL
         # --------------------------------------
+        global mdl
         # configure the model
         model = Prophet(
         interval_width=0.95,
@@ -158,7 +170,7 @@ def generate_forecast():
         yearly_seasonality=True,
   #     seasonality_mode='multiplicative'
         )
-
+        mdl = model
         # train the model
         model.fit( history_pd )
         # --------------------------------------
@@ -167,11 +179,13 @@ def generate_forecast():
         # --------------------------------------
         # make predictions
         future_pd = model.make_future_dataframe(
-        periods=5,
+        periods=7,
         freq='W-MON',
-        include_history=True
+        include_history=False
         )
+        global mdl_fit
         forecast_pd = model.predict(future_pd)
+        mdl_fit = forecast_pd
         # --------------------------------------
         # INVERSE TRANSFORM 'y' AND THE FORECASTS
         # --------------------------------------
@@ -186,25 +200,25 @@ def generate_forecast():
         f_pd = forecast_pd[['ds','yhat', 'yhat_upper', 'yhat_lower']].set_index('ds')
 
         # get relevant fields from history
-        h_pd = history_pd[['ds','facilities','drug_name', 'y']].set_index('ds')#,'y']].set_index('ds')
+        h_pd = history_pd[['ds','branch_name','product_name', 'y']].set_index('ds')#,'y']].set_index('ds')
 
         # join history and forecast
         results_pd = f_pd.join( h_pd, how='left' )
         results_pd.reset_index(level=0, inplace=True)
 
         # get store & item from incoming data set (that is, each store-item combination)
-        results_pd['facilities'] = history_pd['facilities'].iloc[0]
-        results_pd['drug_name'] = history_pd['drug_name'].iloc[0]
+        results_pd['branch_name'] = history_pd['branch_name'].iloc[0]
+        results_pd['product_name'] = history_pd['product_name'].iloc[0]
         # --------------------------------------
-        results_pd = results_pd[['ds', 'facilities', 'drug_name', 'y', 'yhat', 'yhat_upper', 'yhat_lower']].tail(2)
+        results_pd = results_pd[['ds', 'branch_name', 'product_name', 'y', 'yhat', 'yhat_upper', 'yhat_lower']]
         # return expected dataset
-        return (results_pd, model, forecast_pd)
+        return results_pd
 
     # store_item_df = train_data(rawDf, facilityDrug)
 
     results = (
-    trnData.groupBy('facilities', 'drug_name')
-      .apply(forecast_store_item[0])
+    trnData.groupBy('branch_name', 'product_name')
+      .apply(forecast_store_item)
       .withColumn('training_date', current_date())
       )
 
@@ -225,15 +239,16 @@ def generate_forecast():
     spark_forecast_pdf[['yhat','yhat_upper','yhat_lower']] = spark_forecast_pdf[['yhat','yhat_upper','yhat_lower']].round(0).clip(lower=1)#
 
     #Convert all nan forecasts back to zero and convert the rest to integer
-    spark_forecast_pdf[['Average_Forecast','Upper_Forecast','Lower_Forecast']] = spark_forecast_pdf[['yhat','yhat_upper','yhat_lower']].fillna(0).astype(int)
-
-return (spark_forecast_pdf, forecast_store_item[1], forecast_store_item[2])
+    spark_forecast_pdf[['yhat','yhat_upper','yhat_lower']] = spark_forecast_pdf[['yhat','yhat_upper','yhat_lower']].fillna(0).astype(int)
+    spark_forecast_pdf = spark_forecast_pdf.rename(columns={"yhat": "Average_Forecast", "yhat_upper": "Upper_Forecast", "yhat_lower":"Lower_Forecast" })
+    return spark_forecast_pdf
 
 
 forecasted_demand = generate_forecast()
 
-st.write(forecasted_demand[0])
+forecasted_demand = forecasted_demand.drop(columns=["y"])
+
+st.write(forecasted_demand)
 
 st.write("Forecast components")
-fig2 = generate_forecast()[1].plot_components(forecasted_demand[2])
-st.write(fig2)
+st.line_chart(forecasted_demand[["ds", "Average_Forecast", "Upper_Forecast", "Lower_Forecast"]][-4:].set_index('ds'))
