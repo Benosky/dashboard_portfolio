@@ -1,31 +1,4 @@
-# import yfinance as yf
-# import streamlit as st
-#
-# st.write("""
-# # Simple Stock Price App
-# Shown are the stock **closing price** and ***volume*** of Google!
-# """)
-#
-# # https://towardsdatascience.com/how-to-get-stock-data-using-python-c0de1df17e75
-# #define the ticker symbol
-# tickerSymbol = 'GOOGL'
-# #get data on this ticker
-# tickerData = yf.Ticker(tickerSymbol)
-# #get the historical prices for this ticker
-# tickerDf = tickerData.history(period='1d', start='2010-5-31', end='2020-5-31')
-# # Open	High	Low	Close	Volume	Dividends	Stock Splits
-#
-# st.write("""
-# ## Closing Price
-# """)
-# st.line_chart(tickerDf.Close)
-# st.write("""
-# ## Volume Price
-# """)
-# st.line_chart(tickerDf.Volume)
-#
-#
-
+#Created by Benjamin Umeh
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -51,7 +24,7 @@ ticker_symbol = st.text_input("Enter Valid Ticker Symbol", "TSLA")
 
 @st.cache
 def load_data():
-    stock_df = pdr.get_data_yahoo(ticker_symbol.strip(), period='6mo', interval='1d', prepost = True)#yf.Ticker(str(ticker_symbol).upper())
+    stock_df = pdr.get_data_yahoo(ticker_symbol.strip(), period='6mo', interval='1d', prepost = True)
     return stock_df
 
 df = load_data().reset_index()
@@ -63,12 +36,6 @@ if len(df) == 0:
     st.stop()
 else:
     st.write("Valid ticker symbol entered; here goes the rest of the app")
-
-# try:
-#     catcher()
-# except SystemExit:
-#     st.write("Enter a valid ticker")
-#
 
 columns = st.multiselect(
     "Choose Price To Display", list(df.drop(['Adj Close', 'Volume'], axis=1).columns), ['Close']
