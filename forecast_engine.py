@@ -28,8 +28,6 @@ import datetime
 import streamlit as st
 import plotly.express as px
 from pandas_datareader import data as pdr
-import yfinance as yf
-yf.pdr_override()
 import sys
 import pycountry_convert as pc
 import pydeck as pdk
