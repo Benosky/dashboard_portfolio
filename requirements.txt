@@ -4,7 +4,7 @@ pydeck==0.6.1
 numpy==1.19.2
 fbprophet==0.7
 pystan==2.19.1.1
-numpy==1.19.5
+#numpy==1.19.5
 plotly
 pyarrow==0.14.1
 pycountry_convert==0.7.2
